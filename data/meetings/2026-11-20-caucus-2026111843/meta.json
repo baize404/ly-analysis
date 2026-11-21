@@ -29,5 +29,16 @@
   },
   "transcript_sha256": "b78111a07d4d23ad407d316968360adb18d116e5f687e66d7dbc51e5efc16f94",
   "transcript_chars": 5550,
-  "analysis": null
+  "analysis": {
+    "generated_at": "2026-11-21T18:12:39+08:00",
+    "source": "gazette",
+    "source_rank": 3,
+    "source_label": "立法院公報發言紀錄（官方逐字紀錄）",
+    "transcript_sha256": "b78111a07d4d23ad407d316968360adb18d116e5f687e66d7dbc51e5efc16f94",
+    "transcript_chars": 5550,
+    "lint": [],
+    "model": "Claude Opus 5.5（對話中撰寫，非 API）",
+    "mode": "manual",
+    "usage": {}
+  }
 }

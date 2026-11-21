@@ -260,5 +260,28 @@ class NeedsAnalysisTest(unittest.TestCase):
                                             "transcript_chars": 1000, "analysis": done}, cfg))
 
 
+
+
+class ImportToolTest(unittest.TestCase):
+    def test_import_records_transcript_version(self):
+        from tools.import_analysis import import_analysis
+        from run import needs_analysis
+        cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "2026-11-20-plenary-x"
+            meta = {"slug": folder.name, "source": "ai_full", "source_rank": 2, "source_label": "AI",
+                    "transcript_sha256": "abc", "transcript_chars": 1000, "analysis": None}
+            collect.save_meta(folder, meta)
+            issues = import_analysis(folder, "## 一句話摘要\n\n院會照案通過。", "測試")
+            self.assertEqual(issues, [])
+            saved = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["analysis"]["mode"], "manual")
+            self.assertFalse(needs_analysis(saved, cfg))
+            saved["source_rank"] = 3  # 公報刊出後應重新分析
+            self.assertTrue(needs_analysis(saved, cfg))
+            with self.assertRaises(ValueError):
+                import_analysis(folder, "# 標題\n內容", "測試")
+
+
 if __name__ == "__main__":
     unittest.main()

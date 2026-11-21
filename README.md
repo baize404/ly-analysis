@@ -53,6 +53,17 @@ GitHub Actions 每天 11:43 與 21:17（臺北時間）執行（`.github/workflo
 
 以 Claude Sonnet 5.5（輸入每百萬 tokens 2 美元、輸出 10 美元）計，一場約 7 小時的院會逐字稿約十幾萬字，含審稿大約 1 美元上下。實際用量記錄在各場 `data/meetings/*/meta.json` 的 `analysis.usage`。
 
+### 不設 API 金鑰時：在對話中撰寫後匯入
+
+沒有設定 `ANTHROPIC_API_KEY` 時，排程仍會收集逐字稿並更新網站，只是不產生分析。可以在 Claude 對話中依 `prompts/` 的同一套規則撰寫分析，再匯入：
+
+```bash
+python tools/import_analysis.py <會議資料夾名稱> 分析.md --model "Claude Opus 5.5（對話中撰寫，非 API）"
+python run.py --only-site
+```
+
+匯入工具會執行同樣的程式檢查，並記錄分析所依據的逐字稿版本。之後若逐字稿改版（例如公報刊出），而且已設定金鑰，自動流程會重新分析。
+
 ## 本機執行
 
 ```bash

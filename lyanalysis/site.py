@@ -161,6 +161,9 @@ def build_meeting(meta: dict, cfg: dict) -> str:
         content = render_markdown(analysis_path.read_text(encoding="utf-8"))
         foot = (f"<p class=\"muted small\">分析產生時間：{esc(analysis.get('generated_at'))}，"
                 f"模型：{esc(analysis.get('model'))}，依據：{esc(analysis.get('source_label') or meta.get('source_label'))}。</p>")
+        if analysis.get("mode") == "manual":
+            foot += ("<p class=\"muted small\">本篇依本站同一套撰寫規則在 Claude 對話中完成後匯入，"
+                     "經過相同的程式檢查；逐字稿改版（例如公報刊出）時，自動流程會重新分析。</p>")
         body = f'<article class="analysis">{content}</article>{foot}'
     elif meta.get("analysis_error"):
         err = meta["analysis_error"]

@@ -105,5 +105,16 @@
   "source_extra": {},
   "transcript_sha256": "60e6149925f5887b5d103629fad520745e28c181d9db8444431555d1f24ed659",
   "transcript_chars": 29501,
-  "analysis": null
+  "analysis": {
+    "generated_at": "2026-11-21T18:12:51+08:00",
+    "source": "ai_full",
+    "source_rank": 2,
+    "source_label": "AI 語音辨識逐字稿（完整會議影片，未經人工校對）",
+    "transcript_sha256": "60e6149925f5887b5d103629fad520745e28c181d9db8444431555d1f24ed659",
+    "transcript_chars": 29501,
+    "lint": [],
+    "model": "Claude Opus 5.5（對話中撰寫，非 API）",
+    "mode": "manual",
+    "usage": {}
+  }
 }
