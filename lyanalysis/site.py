@@ -238,7 +238,9 @@ def build_laws(cfg: dict) -> str:
             label = esc(lawmod.article_label(no))
             label_html = f'<a href="{esc(link)}">{label}</a>' if link else label
             text = esc(item["text"]).replace("\n", "<br>") if item else '<span class="muted">（原文未取得）</span>'
-            arts.append(f'<div class="article"><div class="article-no">{label_html}</div><div class="article-text">{text}</div></div>')
+            note = law.get("article_notes", {}).get(no)
+            note_html = f'<p class="article-note">本站註：{esc(note)}</p>' if note else ""
+            arts.append(f'<div class="article"><div class="article-no">{label_html}</div><div class="article-text">{text}{note_html}</div></div>')
         sections.append(f"""<section class="law" id="{anchor}">
 <h2>{esc(law['name'])}</h2>
 <p class="muted small">收錄原因：{esc(law.get('reason') or '')}</p>

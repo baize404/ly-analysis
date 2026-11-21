@@ -230,7 +230,9 @@ def reference_text(cache: dict | None = None) -> str:
             item = info.get("articles", {}).get(no)
             body = item["text"] if item else "（原文未取得）"
             link = article_url(info.get("pcode"), no)
-            out.append(f"### {law['name']} {article_label(no)}\n{body}" + (f"\n來源：{link}" if link else "") + "\n")
+            note = law.get("article_notes", {}).get(no)
+            out.append(f"### {law['name']} {article_label(no)}\n{body}" + (f"\n（本站註，非條文原文：{note}）" if note else "")
+                       + (f"\n來源：{link}" if link else "") + "\n")
     notes = ROOT / "references" / "notes.md"
     if notes.exists():
         out.append(notes.read_text(encoding="utf-8"))

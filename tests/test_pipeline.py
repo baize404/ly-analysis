@@ -148,6 +148,7 @@ class LawsTest(unittest.TestCase):
         self.assertIn("中華民國憲法 第 70 條", text)
         self.assertIn("原文未取得", text)
         self.assertIn("第 71 條之 1", text)
+        self.assertIn("本站註，非條文原文", text)  # 憲法第 57 條的加註
 
 
 class FakeStream:

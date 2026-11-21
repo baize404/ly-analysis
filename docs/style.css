@@ -81,6 +81,7 @@ tr:last-child td { border-bottom: 0; }
 .article { display: grid; grid-template-columns: 7.5em 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
 .article-no { font-weight: 600; white-space: nowrap; }
 .article-text { line-height: 1.8; }
+.article-note { margin: 6px 0 0; padding: 6px 10px; font-size: .85rem; background: var(--warn-soft); color: var(--warn); border-radius: 6px; }
 @media (max-width: 560px) {
   .article { grid-template-columns: 1fr; gap: 2px; }
   .toc ul { columns: 1; }
