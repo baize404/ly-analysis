@@ -1,0 +1,76 @@
+name: 更新會議分析
+
+on:
+  schedule:
+    - cron: "43 3 * * *"    # 每天 11:43（臺北時間）
+    - cron: "17 13 * * *"   # 每天 21:17（臺北時間）
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "起始日期 YYYY-MM-DD（留空＝最近幾天）"
+        required: false
+        default: ""
+      until:
+        description: "結束日期 YYYY-MM-DD（留空＝今天）"
+        required: false
+        default: ""
+      max:
+        description: "本次最多分析幾場（留空＝依 config.json）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-analysis
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 單元測試
+        run: python -m unittest discover -s tests -v
+
+      - name: 抓資料並分析
+        id: run
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INPUT_SINCE: ${{ inputs.since }}
+          INPUT_UNTIL: ${{ inputs.until }}
+          INPUT_MAX: ${{ inputs.max }}
+        run: python run.py --since "$INPUT_SINCE" --until "$INPUT_UNTIL" --max "$INPUT_MAX"
+
+      - name: 提交結果
+        if: always()
+        run: |
+          python run.py --only-site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs
+          if git diff --cached --quiet; then
+            echo "沒有變更"
+          else
+            git commit -m "更新會議分析 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          fi
+
+      - name: 回報錯誤
+        if: steps.run.outcome == 'failure'
+        run: |
+          echo "::error::本次執行有錯誤，原因與處理方式請看本次執行的 Summary 頁面。已完成的部分仍已更新到網站。"
+          exit 1

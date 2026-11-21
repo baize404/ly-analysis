@@ -1,0 +1,18 @@
+{
+  "site_title": "立法院會議客觀分析",
+  "site_url": "https://baize404.github.io/ly-analysis/",
+  "repo_url": "https://github.com/baize404/ly-analysis",
+  "term": 11,
+  "meeting_types": ["院會", "全院委員會", "黨團協商"],
+  "lookback_days": 3,
+  "gazette_recheck_days": 45,
+  "model": "claude-sonnet-5-5",
+  "fallback_model": "claude-opus-5-5",
+  "chunk_chars": 200000,
+  "chunk_max_tokens": 16000,
+  "final_max_tokens": 32000,
+  "review_pass": true,
+  "max_analyses_per_run": 6,
+  "reanalyze_growth_ratio": 1.25,
+  "laws_refresh_days": 7
+}
