@@ -32,6 +32,15 @@ class TranscriptTest(unittest.TestCase):
         self.assertEqual(label_speaker("陳超明", self.roster), "陳超明（無黨籍／中國國民黨黨團）")
         self.assertEqual(label_speaker("鄭委員天財", self.roster), "鄭天財Sra Kacaw（中國國民黨）")
         self.assertEqual(label_speaker("主席", self.roster), "主席")
+        self.assertEqual(label_speaker("謝院長龍介", self.roster), "謝龍介（院長，中國國民黨）")
+        self.assertEqual(label_speaker("SPEAKER_02", self.roster), "（未辨識講者 3）")
+        self.assertEqual(label_speaker("卓院長榮泰", self.roster), "卓院長榮泰")  # 非立委：保留原樣
+
+    def test_out_of_order_segments(self):
+        ivod = load("ivod_clip.json")
+        ivod["transcript"]["whisperx"].reverse()
+        lines = ivod_lines(ivod, self.roster)
+        self.assertEqual([l["time"] for l in lines], sorted(l["time"] for l in lines))
 
     def test_ivod_lines(self):
         lines = ivod_lines(load("ivod_clip.json"), self.roster)

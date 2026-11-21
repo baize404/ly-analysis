@@ -6,12 +6,16 @@ from datetime import datetime, timedelta
 
 CJK = re.compile(r"[一-鿿]")
 UNKNOWN = "（未辨識講者）"
+ANON = re.compile(r"^SPEAKER_(\d+)$")
+# AI 講者辨識的稱謂寫法，例如「莊委員瑞雄」「韓院長國瑜」「江副院長啟臣」。
+TITLES = ["委員", "院長", "副院長", "召委", "召集委員"]
 
 
 def build_roster(legislators: list[dict]) -> dict[str, tuple[str, str]]:
-    """建立「名稱寫法 → (姓名, 黨籍標示)」對照。
+    """建立「名稱寫法 → (姓名, 標示)」對照。
 
-    AI 講者辨識會把委員寫成「莊委員瑞雄」，公報則寫「莊瑞雄」，兩種都要對得上。
+    AI 講者辨識會把委員寫成「莊委員瑞雄」，公報則寫「莊瑞雄」，都要對得上。
+    立法院長、副院長也是立委，以「韓院長國瑜」這類寫法出現時，標示中保留職稱。
     """
     roster: dict[str, tuple[str, str]] = {}
     for lg in legislators:
@@ -22,11 +26,13 @@ def build_roster(legislators: list[dict]) -> dict[str, tuple[str, str]]:
         caucus = (lg.get("黨團") or "").strip()
         label = party if (not caucus or caucus == party) else f"{party}／{caucus}黨團"
         cjk = "".join(CJK.findall(name)) or name
-        aliases = {name, cjk, cjk[0] + "委員" + cjk[1:]}
-        if len(cjk) >= 4:  # 複姓
-            aliases.add(cjk[:2] + "委員" + cjk[2:])
-        for alias in aliases:
+        for alias in (name, cjk):
             roster.setdefault(alias, (name, label))
+        splits = [1, 2] if len(cjk) >= 4 else [1]  # 四字以上可能是複姓
+        for cut in splits:
+            for title in TITLES:
+                shown = label if title == "委員" else f"{title}，{label}" if label else title
+                roster.setdefault(cjk[:cut] + title + cjk[cut:], (name, shown))
     return roster
 
 
@@ -34,6 +40,9 @@ def label_speaker(raw: str | None, roster: dict[str, tuple[str, str]]) -> str:
     raw = (raw or "").strip()
     if not raw:
         return UNKNOWN
+    anon = ANON.match(raw)
+    if anon:
+        return f"（未辨識講者 {int(anon.group(1)) + 1}）"
     hit = roster.get(raw)
     if hit:
         name, label = hit
@@ -58,7 +67,8 @@ def _offset(seconds: float) -> str:
 def ivod_lines(ivod: dict, roster: dict, merge_gap: float = 4.0, max_para: int = 300) -> list[dict]:
     """把 whisperx 文字段落配上 pyannote 講者，換算成會議當天的時鐘時間。"""
     tr = ivod.get("transcript") or {}
-    segments = tr.get("whisperx") or []
+    # 原始資料偶有順序顛倒，依開始秒數排序
+    segments = sorted(tr.get("whisperx") or [], key=lambda s: float(s.get("start") or 0))
     diar = sorted(tr.get("pyannote") or [], key=lambda d: float(d.get("start") or 0))
     base = _parse_dt(ivod.get("開始時間"))
     lines: list[dict] = []
