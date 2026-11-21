@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-21T15:09:18+08:00",
+  "at": "2026-11-21T15:11:08+08:00",
   "errors": [],
   "notes": [
     "未設定 ANTHROPIC_API_KEY，本次只更新資料與網站，沒有產生分析。請到 repo 的 Settings → Secrets and variables → Actions 新增。"
