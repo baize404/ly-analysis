@@ -45,7 +45,7 @@ def page(title: str, body: str, root: str, site_title: str, description: str = "
 <body>
 <header class="site-header"><div class="wrap">
   <a class="brand" href="{root}">{esc(site_title)}</a>
-  <nav><a href="{root}">會議列表</a><a href="{root}about.html">方法與限制</a></nav>
+  <nav><a href="{root}">會議列表</a><a href="{root}laws.html">法條參考</a><a href="{root}about.html">方法與限制</a></nav>
 </div></header>
 <main class="wrap">
 {body}
@@ -203,6 +203,54 @@ def build_about(cfg: dict) -> str:
     return page(f"方法與限制｜{cfg['site_title']}", body, "", cfg["site_title"])
 
 
+def build_laws(cfg: dict) -> str:
+    from . import laws as lawmod
+
+    law_cfg = lawmod.load_config()
+    cache = lawmod.load_cache()
+    stamp = cache.get("database_updated") or (cache.get("fetched_at") or "")[:10]
+    head = """<h1>法條參考</h1>
+<p>本站分析時，AI 只能引用下列條文；引用其他條文時必須標註「需查證」，並由程式檢查。
+條文由程式自<a href="https://law.moj.gov.tw/">全國法規資料庫</a>開放資料下載，未經改寫。"""
+    if stamp:
+        head += f"資料版本：{esc(stamp)}；本站下載時間：{esc((cache.get('fetched_at') or '')[:16].replace('T', ' '))}。"
+    head += "</p>"
+    if not cache.get("laws"):
+        return page(f"法條參考｜{cfg['site_title']}",
+                    head + '<p class="empty">條文尚未下載，下次排程會自動更新。</p>', "", cfg["site_title"])
+
+    toc, sections = [], []
+    for i, law in enumerate(law_cfg["laws"]):
+        info = cache["laws"].get(law["name"], {})
+        anchor = f"law-{i}"
+        toc.append(f'<li><a href="#{anchor}">{esc(law["name"])}</a></li>')
+        meta = []
+        if info.get("modified"):
+            meta.append(f"最新異動日期 {esc(info['modified'])}")
+        if info.get("abandoned"):
+            meta.append("<strong>注意：資料庫標示此法規已廢止</strong>")
+        if info.get("url"):
+            meta.append(f'<a href="{esc(info["url"])}">全國法規資料庫全文</a>')
+        arts = []
+        for no in law["articles"]:
+            item = info.get("articles", {}).get(no)
+            link = lawmod.article_url(info.get("pcode"), no)
+            label = esc(lawmod.article_label(no))
+            label_html = f'<a href="{esc(link)}">{label}</a>' if link else label
+            text = esc(item["text"]).replace("\n", "<br>") if item else '<span class="muted">（原文未取得）</span>'
+            arts.append(f'<div class="article"><div class="article-no">{label_html}</div><div class="article-text">{text}</div></div>')
+        sections.append(f"""<section class="law" id="{anchor}">
+<h2>{esc(law['name'])}</h2>
+<p class="muted small">收錄原因：{esc(law.get('reason') or '')}</p>
+<p class="small">{'｜'.join(meta)}</p>
+{''.join(arts)}
+</section>""")
+    note = """<aside class="notice">大法官解釋不在全國法規資料庫的開放資料中。本站僅收錄釋字第 264、391 號的摘要（本站自行改寫），
+供 AI 理解背景，原文請見<a href="https://cons.judicial.gov.tw/">憲法法庭網站</a>。</aside>"""
+    body = head + note + '<nav class="toc"><ul>' + "".join(toc) + "</ul></nav>" + "".join(sections)
+    return page(f"法條參考｜{cfg['site_title']}", body, "", cfg["site_title"])
+
+
 def build(data_dir: Path, out_dir: Path, cfg: dict) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     meetings_out = out_dir / "m"
@@ -221,4 +269,5 @@ def build(data_dir: Path, out_dir: Path, cfg: dict) -> int:
             shutil.copyfile(transcript, folder / "transcript.txt")
     (out_dir / "index.html").write_text(build_index(metas, cfg), encoding="utf-8")
     (out_dir / "about.html").write_text(build_about(cfg), encoding="utf-8")
+    (out_dir / "laws.html").write_text(build_laws(cfg), encoding="utf-8")
     return len(metas)

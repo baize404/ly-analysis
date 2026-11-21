@@ -5,6 +5,7 @@
   python run.py                      # 最近 lookback_days 天
   python run.py --since 2026-11-20   # 指定起始日期
   python run.py --only-site          # 只重新產生網站
+  python run.py --laws --only-site   # 強制重新下載法條並產生網站
   python run.py --no-analyze         # 只抓資料，不呼叫 AI
 
 有錯誤時 exit code 為 1，並把中文的錯誤原因說明寫進 GitHub Actions 的執行摘要。
@@ -152,14 +153,7 @@ def analyze_all(cfg: dict, limit: int) -> None:
     from lyanalysis.analyze import analyze
 
     client = anthropic.Anthropic(max_retries=4)
-    try:
-        cache = laws.refresh(int(cfg["laws_refresh_days"]), log=log)
-        if cache.get("failures"):
-            notes.append(f"有 {len(cache['failures'])} 條法條無法從全國法規資料庫取得，分析時這些條文只提供條號。")
-    except Exception as exc:
-        record_error("抓法條", "全國法規資料庫", exc)
-
-    metas = [json.loads(p.read_text(encoding="utf-8")) for p in MEETINGS.glob("*/meta.json")]
+    metas =[json.loads(p.read_text(encoding="utf-8")) for p in MEETINGS.glob("*/meta.json")]
     todo = sorted((m for m in metas if needs_analysis(m, cfg)), key=lambda m: m["date"], reverse=True)
     if len(todo) > limit:
         notes.append(f"待分析 {len(todo)} 場，本次依設定只處理最新的 {limit} 場，其餘留待下次。")
@@ -185,6 +179,17 @@ def analyze_all(cfg: dict, limit: int) -> None:
         usage = record.get("usage", {})
         log(f"  ✓ 完成：{record['model']}，輸入 {usage.get('input_tokens', 0):,}、輸出 {usage.get('output_tokens', 0):,} tokens，"
             f"程式檢查提示 {len(meta['analysis']['lint'])} 項")
+
+
+def refresh_laws(cfg: dict, force: bool = False) -> None:
+    """依 references/laws.json 從全國法規資料庫更新條文（與 API 金鑰無關，每次執行都檢查）。"""
+    try:
+        cache = laws.refresh(int(cfg["laws_refresh_days"]), force=force, log=log)
+    except Exception as exc:
+        record_error("抓法條", "全國法規資料庫", exc)
+        return
+    if cache.get("failures"):
+        notes.append(f"法條更新有 {len(cache['failures'])} 項問題：" + "；".join(cache["failures"][:8]))
 
 
 def write_summary(cfg: dict) -> None:
@@ -217,8 +222,14 @@ def main() -> int:
     parser.add_argument("--max", default="", help="本次最多分析幾場")
     parser.add_argument("--no-analyze", action="store_true")
     parser.add_argument("--only-site", action="store_true")
+    parser.add_argument("--laws", action="store_true", help="強制重新下載法條後產生網站")
     args = parser.parse_args()
     cfg = load_config()
+
+    if args.laws:
+        refresh_laws(cfg, force=True)
+    elif not args.only_site:
+        refresh_laws(cfg)
 
     if not args.only_site:
         today = datetime.now(TZ).date()
@@ -235,7 +246,7 @@ def main() -> int:
 
     count = site.build(MEETINGS, DOCS, cfg)
     log(f"網站已產生：{count} 場會議 → {DOCS}")
-    if not args.only_site:
+    if not args.only_site or args.laws:
         write_summary(cfg)
     return 1 if errors else 0
 

@@ -9,7 +9,7 @@
 ```
 LYAPI（立法院 IVOD 影片 AI 逐字稿／公報發言紀錄）
    ↓ lyanalysis/collect.py   依「公報 > 完整會議逐字稿 > 發言片段逐字稿」選最可靠的來源
-全國法規資料庫（指定條文，每週更新）
+全國法規資料庫 OpenAPI（references/laws.json 指定的條文，每週更新）
    ↓ lyanalysis/laws.py
 Claude API（撰寫 → 中立性審稿）
    ↓ lyanalysis/analyze.py   被安全機制婉拒時自動改用備用模型
@@ -23,8 +23,14 @@ GitHub Actions 每天 11:43 與 21:17（臺北時間）執行（`.github/workflo
 ## 第一次設定
 
 1. **加入 API 金鑰**：repo 的 **Settings → Secrets and variables → Actions → New repository secret**，名稱 `ANTHROPIC_API_KEY`，值貼上 Anthropic Console 建立的金鑰。金鑰不要放進程式碼或 commit。
-2. **開啟網站**：**Settings → Pages → Build and deployment**，Source 選 **Deploy from a branch**，Branch 選 **main**、資料夾 **/docs**，按 Save。
+2. **開啟網站**：**Settings → Pages → Build and deployment**，Source 選 **Deploy from a branch**，Branch 選 **main**、資料夾 **/docs**（選根目錄也可以，會自動轉到 docs/），按 Save。
 3. **第一次執行**：**Actions → 更新會議分析 → Run workflow**，「起始日期」填 `2026-11-20` 即可補抓那天之後的會議。
+
+## 法條資料
+
+- 要提供給 AI 的法條列在 `references/laws.json`（法規名稱、條號、收錄原因），條文原文由程式從全國法規資料庫 OpenAPI 整批下載後擷取，存成 `data/laws_cache.json`，並產生公開的「法條參考」頁。
+- 每次排程都會檢查：快取超過 7 天，或 `laws.json` 新增了條號，就重新下載。也可以手動執行 `python run.py --laws --only-site`。
+- 大法官解釋不在開放資料中，`references/notes.md` 只放本專案自行改寫的摘要，並註明以憲法法庭網站原文為準。
 
 ## 出錯時
 

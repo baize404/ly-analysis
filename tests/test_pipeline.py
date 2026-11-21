@@ -108,6 +108,41 @@ class LawsTest(unittest.TestCase):
         self.assertEqual(laws.parse_article(page), "第一項文字。\n一、第一款。")
         self.assertIsNone(laws.parse_article("<html>no article</html>"))
 
+    def test_parse_bulk_and_record(self):
+        import io, zipfile
+        data = {"UpdateDate": "2026/11/13", "Laws": [{
+            "LawName": "測試法", "LawURL": "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=X0000001",
+            "LawModifiedDate": "20250101", "LawAbandonNote": "", "LawLevel": "法律",
+            "LawArticles": [
+                {"ArticleType": "C", "ArticleNo": "", "ArticleContent": "第 一 章 總則"},
+                {"ArticleType": "A", "ArticleNo": "第 1 條", "ArticleContent": "第一條內容。"},
+                {"ArticleType": "A", "ArticleNo": "第 71-1 條", "ArticleContent": "之一條內容。"}]}]}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("ChLaw.json", ("\ufeff" + json.dumps(data, ensure_ascii=False)).encode("utf-8"))
+        index, updated = laws.parse_bulk(buf.getvalue())
+        self.assertEqual(updated, "2026/11/13")
+        rec = laws.law_record(index["測試法"])
+        self.assertEqual(rec["pcode"], "X0000001")
+        self.assertEqual(rec["articles"], {"1": "第一條內容。", "71-1": "之一條內容。"})
+        self.assertFalse(rec["abandoned"])
+        self.assertEqual(laws.normalize_no("第 71-1 條"), "71-1")
+        self.assertIsNone(laws.normalize_no("第 一 章"))
+
+    def test_laws_page(self):
+        cache = {"fetched_at": "2026-11-21T17:00:00+08:00", "database_updated": "2026/11/13", "laws": {
+            "中華民國憲法": {"pcode": "A0000001", "url": "u", "modified": "19470101",
+                             "articles": {"70": {"text": "測試<條文>", "source": "openapi"}}}}}
+        original = laws.load_cache
+        laws.load_cache = lambda: cache
+        try:
+            html_text = site.build_laws({"site_title": "測試站"})
+        finally:
+            laws.load_cache = original
+        self.assertIn("測試&lt;條文&gt;", html_text)
+        self.assertIn("pcode=A0000001&amp;flno=70", html_text)
+        self.assertIn("（原文未取得）", html_text)  # 快取裡沒有的條文
+
     def test_reference_text_without_cache(self):
         text = laws.reference_text({"fetched_at": None, "articles": {}})
         self.assertIn("中華民國憲法 第 70 條", text)
