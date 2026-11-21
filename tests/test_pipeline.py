@@ -291,5 +291,200 @@ class NestedListTest(unittest.TestCase):
         self.assertEqual(out.count("<ul>"), 2)
 
 
+# ---------------------------------------------------------------- AI 服務
+
+import io  # noqa: E402
+import urllib.error  # noqa: E402
+
+from lyanalysis import backends  # noqa: E402
+
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def gemini_ok(text="## 一句話摘要\n結果", reason="STOP"):
+    return {"candidates": [{"content": {"parts": [{"text": "（思考中）", "thought": True}, {"text": text}]},
+                            "finishReason": reason}],
+            "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 30, "thoughtsTokenCount": 5}}
+
+
+def http_error(code, message, details=()):
+    body = json.dumps({"error": {"code": code, "message": message, "details": list(details)}}).encode()
+    return urllib.error.HTTPError("https://example", code, message, {}, io.BytesIO(body))
+
+
+class FakeOpener:
+    """依序回傳預先排好的結果（dict＝成功；Exception＝丟出）。"""
+
+    def __init__(self, *results):
+        self.results, self.requests = list(results), []
+
+    def __call__(self, request, timeout=None):
+        self.requests.append(request)
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return FakeResponse(json.dumps(result).encode())
+
+
+def make_gemini(*results):
+    sleeps = []
+    opener = FakeOpener(*results)
+    backend = backends.GeminiBackend("test-key", opener=opener, sleep=sleeps.append, clock=lambda: 0.0,
+                                     min_interval=0)
+    return backend, opener, sleeps
+
+
+class GeminiBackendTest(unittest.TestCase):
+    def test_request_and_response(self):
+        backend, opener, _ = make_gemini(gemini_ok())
+        usage = {}
+        text = backend.complete("gemini-x", "系統", "資料", "指示", 1000, usage)
+        self.assertEqual(text, "## 一句話摘要\n結果")  # 思考內容不輸出
+        req = opener.requests[0]
+        self.assertIn("models/gemini-x:generateContent", req.full_url)
+        self.assertEqual(req.get_header("X-goog-api-key"), "test-key")
+        body = json.loads(req.data)
+        self.assertEqual(body["systemInstruction"]["parts"][0]["text"], "系統")
+        self.assertEqual([p["text"] for p in body["contents"][0]["parts"]], ["資料", "指示"])
+        self.assertGreater(body["generationConfig"]["maxOutputTokens"], 1000)
+        self.assertEqual(usage["input_tokens"], 120)
+        self.assertEqual(usage["thinking_tokens"], 5)
+
+    def test_truncation_note(self):
+        backend, _, _ = make_gemini(gemini_ok(reason="MAX_TOKENS"))
+        self.assertIn("截斷", backend.complete("m", "s", "d", "i", 10, {}))
+
+    def test_safety_block_is_refusal(self):
+        backend, _, _ = make_gemini({"candidates": [{"finishReason": "SAFETY"}]})
+        with self.assertRaises(backends.Refusal):
+            backend.complete("m", "s", "d", "i", 10, {})
+        backend, _, _ = make_gemini({"promptFeedback": {"blockReason": "PROHIBITED_CONTENT"}})
+        with self.assertRaises(backends.Refusal):
+            backend.complete("m", "s", "d", "i", 10, {})
+
+    def test_per_minute_limit_waits_and_retries(self):
+        busy = http_error(429, "Resource exhausted", [{"@type": "type.googleapis.com/google.rpc.RetryInfo",
+                                                       "retryDelay": "17s"}])
+        backend, opener, sleeps = make_gemini(busy, gemini_ok())
+        self.assertIn("結果", backend.complete("m", "s", "d", "i", 10, {}))
+        self.assertEqual(len(opener.requests), 2)
+        self.assertIn(17.0, sleeps)
+
+    def test_daily_quota_and_missing_model(self):
+        daily = http_error(429, "Quota exceeded", [{"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                                                    "violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}])
+        backend, _, _ = make_gemini(daily)
+        with self.assertRaises(backends.QuotaExhausted) as ctx:
+            backend.complete("m", "s", "d", "i", 10, {})
+        self.assertIn("免費額度", ctx.exception.explain)
+        backend, _, _ = make_gemini(http_error(404, "models/m is not found for API version v1beta"))
+        with self.assertRaises(backends.ModelUnavailable):
+            backend.complete("m", "s", "d", "i", 10, {})
+
+    def test_bad_key_explained(self):
+        backend, _, _ = make_gemini(http_error(400, "API key not valid. Please pass a valid API key."))
+        with self.assertRaises(backends.BackendError) as ctx:
+            backend.complete("m", "s", "d", "i", 10, {})
+        self.assertIn("GEMINI_API_KEY", ctx.exception.explain)
+
+    def test_analyze_falls_back_to_next_model(self):
+        daily = http_error(429, "Quota exceeded for requests per day")
+        backend, opener, _ = make_gemini(daily, gemini_ok("## 一句話摘要\n初稿"), gemini_ok("## 一句話摘要\n審稿後"))
+        cfg = {**CFG, "model": "first", "fallback_models": ["second"]}
+        cfg.pop("fallback_model")
+        text, record = analyze(META, "[09:00:00] 主席：開會", cfg, backend)
+        self.assertEqual(record["model"], "second")
+        self.assertEqual(record["provider"], "gemini")
+        self.assertIn("first", record["skipped_models"][0])
+        self.assertIn("審稿後", text)
+
+    def test_all_models_out_of_quota(self):
+        daily = lambda: http_error(429, "per day quota")  # noqa: E731
+        backend, _, _ = make_gemini(daily(), daily())
+        cfg = {**CFG, "model": "first", "fallback_models": ["second"]}
+        cfg.pop("fallback_model")
+        with self.assertRaises(backends.QuotaExhausted):
+            analyze(META, "[09:00:00] 主席：開會", cfg, backend)
+
+
+class FakeRunner:
+    def __init__(self, *outputs):
+        self.outputs, self.calls = list(outputs), []
+
+    def __call__(self, args, **kwargs):
+        self.calls.append((args, kwargs))
+        code, stdout = self.outputs.pop(0)
+        return SimpleNamespace(returncode=code, stdout=stdout, stderr="")
+
+
+class ClaudeCodeBackendTest(unittest.TestCase):
+    def test_success(self):
+        out = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "## 一句話摘要\n好",
+                          "usage": {"input_tokens": 50, "output_tokens": 7}, "total_cost_usd": 0.01})
+        runner = FakeRunner((0, out))
+        backend = backends.ClaudeCodeBackend(command="claude", runner=runner)
+        usage = {}
+        self.assertEqual(backend.complete("claude-sonnet-5-5", "系統", "資料", "指示", 2000, usage), "## 一句話摘要\n好")
+        args, kwargs = runner.calls[0]
+        self.assertEqual(args[:2], ["claude", "-p"])
+        self.assertIn("--system-prompt-file", args)
+        self.assertEqual(args[args.index("--tools") + 1], "")  # 關閉所有工具
+        self.assertNotIn("--bare", args)  # bare 模式不讀訂閱權杖
+        self.assertIn("資料", kwargs["input"])
+        self.assertEqual(kwargs["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], "2000")
+        self.assertEqual(usage["input_tokens"], 50)
+
+    def test_errors_are_classified(self):
+        cases = [
+            ("Claude usage limit reached. Your limit will reset at 5pm", backends.QuotaExhausted),
+            ("Invalid API key · Please run /login", backends.BackendError),
+            ("API Error: Claude Code is unable to respond to this request, which appears to violate our Usage Policy",
+             backends.Refusal),
+        ]
+        for message, kind in cases:
+            out = json.dumps({"type": "result", "is_error": True, "result": message})
+            backend = backends.ClaudeCodeBackend(command="claude", runner=FakeRunner((1, out)))
+            with self.assertRaises(kind, msg=message):
+                backend.complete("m", "s", "d", "i", 10, {})
+
+
+class SelectBackendTest(unittest.TestCase):
+    cfg = {"provider_order": ["claude_api", "claude_subscription", "gemini"], "chunk_chars": 200000,
+           "max_analyses_per_run": 6,
+           "providers": {"gemini": {"model": "g", "fallback_models": ["g2"], "chunk_chars": 60000}}}
+
+    def test_picks_first_configured(self):
+        backend, pcfg = backends.select_backend(self.cfg, {"GEMINI_API_KEY": "k"})
+        self.assertEqual(backend.name, "gemini")
+        self.assertEqual(pcfg["chunk_chars"], 60000)
+        self.assertEqual(pcfg["max_analyses_per_run"], 6)
+
+    def test_no_key(self):
+        with self.assertRaises(backends.NoBackend):
+            backends.select_backend(self.cfg, {})
+
+    def test_forced_provider_and_unknown(self):
+        backend, _ = backends.select_backend(self.cfg, {"GEMINI_API_KEY": "k", "LY_PROVIDER": "gemini"})
+        self.assertEqual(backend.name, "gemini")
+        with self.assertRaises(backends.BackendError):
+            backends.select_backend(self.cfg, {"LY_PROVIDER": "openai"})
+
+    def test_project_config_is_consistent(self):
+        cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+        from lyanalysis.analyze import models_for
+        for name in cfg["provider_order"]:
+            pcfg = backends.provider_config(cfg, name)
+            chain = models_for(pcfg)
+            self.assertTrue(chain, name)
+            family = "gemini" if name == "gemini" else "claude"
+            self.assertTrue(all(m.startswith(family) for m in chain), (name, chain))
+
+
 if __name__ == "__main__":
     unittest.main()

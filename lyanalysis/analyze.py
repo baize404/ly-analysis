@@ -1,26 +1,17 @@
-"""呼叫 Claude API 產生客觀分析。
+"""用設定的 AI 服務產生客觀分析（服務細節見 backends.py）。
 
 流程：逐字稿（過長時先逐段整理筆記）→ 撰寫完整分析 → 中立性審稿（可在設定關閉）。
-會議資料放在可快取的區塊，撰寫與審稿兩次呼叫共用，節省費用。
-模型的安全分類器婉拒時（stop_reason == "refusal"），改用 config 的 fallback_model 重跑。
+主要模型婉拒、下架或額度用完時，依序改用備用模型重跑。
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+from .backends import Backend, ClaudeAPIBackend, ModelUnavailable, QuotaExhausted, Refusal
 from .laws import reference_text
 from .transcript import chunk
 
 ROOT = Path(__file__).resolve().parent.parent
-
-
-class Refusal(RuntimeError):
-    """模型的安全機制婉拒了這次請求。"""
-
-    def __init__(self, model: str, category: str | None, explanation: str | None):
-        self.model, self.category, self.explanation = model, category, explanation
-        detail = "、".join(x for x in (category, explanation) if x) or "未提供原因"
-        super().__init__(f"{model} 婉拒了請求（{detail}）")
 
 
 def _read(rel: str) -> str:
@@ -49,40 +40,7 @@ def meeting_header(meta: dict) -> str:
     return "\n".join(rows)
 
 
-def _call(client, model: str, system: str, material: str, instruction: str, max_tokens: int, usage: dict) -> str:
-    """material 放在可快取區塊；instruction 每次不同。使用串流以支援長輸出。"""
-    with client.messages.stream(
-        model=model,
-        max_tokens=max_tokens,
-        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": material, "cache_control": {"type": "ephemeral"}},
-                {"type": "text", "text": instruction},
-            ],
-        }],
-    ) as stream:
-        message = stream.get_final_message()
-
-    u = getattr(message, "usage", None)
-    for field in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
-        usage[field] = usage.get(field, 0) + int(getattr(u, field, 0) or 0)
-    usage["calls"] = usage.get("calls", 0) + 1
-
-    if message.stop_reason == "refusal":
-        details = getattr(message, "stop_details", None)
-        get = (lambda k: details.get(k)) if isinstance(details, dict) else (lambda k: getattr(details, k, None))
-        raise Refusal(model, get("category"), get("explanation"))
-    text = "".join(b.text for b in message.content if getattr(b, "type", "") == "text").strip()
-    if not text:
-        raise RuntimeError(f"模型沒有回傳文字（stop_reason={message.stop_reason}）")
-    if message.stop_reason == "max_tokens":
-        text += "\n\n> ⚠ 本段因長度上限被截斷，內容可能不完整。"
-    return text
-
-
-def _run(meta: dict, transcript: str, cfg: dict, client, model: str, usage: dict) -> str:
+def _run(meta: dict, transcript: str, cfg: dict, backend: Backend, model: str, usage: dict) -> str:
     system = _read("prompts/system.md") + "\n\n# 法條參考\n\n" + reference_text()
     header = meeting_header(meta)
     parts = chunk(transcript, int(cfg["chunk_chars"]))
@@ -93,28 +51,55 @@ def _run(meta: dict, transcript: str, cfg: dict, client, model: str, usage: dict
         notes = []
         for i, part in enumerate(parts, 1):
             prompt = _read("prompts/chunk.md").replace("{i}", str(i)).replace("{n}", str(len(parts)))
-            note = _call(client, model, system, f"{header}\n\n# 逐字稿片段\n\n{part}", prompt,
+            note = backend.complete(model, system, f"{header}\n\n# 逐字稿片段\n\n{part}", prompt,
                          int(cfg["chunk_max_tokens"]), usage)
             notes.append(f"## 第 {i}/{len(parts)} 段筆記\n\n{note}")
         material = f"{header}\n\n# 逐字稿分段筆記\n\n" + "\n\n".join(notes)
 
-    draft = _call(client, model, system, material, _read("prompts/final.md"), int(cfg["final_max_tokens"]), usage)
+    draft = backend.complete(model, system, material, _read("prompts/final.md"), int(cfg["final_max_tokens"]), usage)
     if cfg.get("review_pass"):
-        draft = _call(client, model, system, material,
+        draft = backend.complete(model, system, material,
                       f"{_read('prompts/review.md')}\n\n# 待審草稿\n\n{draft}", int(cfg["final_max_tokens"]), usage)
     return draft
 
 
-def analyze(meta: dict, transcript: str, cfg: dict, client) -> tuple[str, dict]:
-    """回傳 (分析 Markdown, 紀錄)。紀錄含實際使用的模型、token 用量、是否改用備用模型。"""
+def models_for(cfg: dict) -> list[str]:
+    """主要模型加上備用模型（fallback_models 清單，或舊設定的 fallback_model），去除重複。"""
+    chain = [cfg["model"]] + list(cfg.get("fallback_models") or [])
+    if cfg.get("fallback_model"):
+        chain.append(cfg["fallback_model"])
+    return list(dict.fromkeys(m for m in chain if m))
+
+
+def analyze(meta: dict, transcript: str, cfg: dict, backend) -> tuple[str, dict]:
+    """回傳 (分析 Markdown, 紀錄)。紀錄含實際使用的服務與模型、用量，以及跳過的模型與原因。
+
+    backend 可以是 Backend，或（相容舊用法）Anthropic client。
+    """
+    if not isinstance(backend, Backend):
+        backend = ClaudeAPIBackend(backend)
     usage: dict = {}
-    record: dict = {"model": cfg["model"], "usage": usage}
-    try:
-        text = _run(meta, transcript, cfg, client, cfg["model"], usage)
-    except Refusal as first:
-        fallback = cfg.get("fallback_model")
-        if not fallback or fallback == cfg["model"]:
-            raise
-        record.update({"model": fallback, "refusal": str(first)})
-        text = _run(meta, transcript, cfg, client, fallback, usage)
-    return text, record
+    record: dict = {"provider": backend.name, "provider_label": backend.label, "usage": usage}
+    skipped: list[str] = []
+    last: Exception | None = None
+    quota: QuotaExhausted | None = None
+    for model in models_for(cfg):
+        try:
+            text = _run(meta, transcript, cfg, backend, model, usage)
+        except (Refusal, ModelUnavailable, QuotaExhausted) as exc:
+            last = exc
+            if isinstance(exc, QuotaExhausted):
+                quota = exc
+            skipped.append(f"{model}：{exc}")
+            continue
+        record["model"] = model
+        if skipped:
+            record["skipped_models"] = skipped
+            refusals = [s for s in skipped if "婉拒" in s]
+            if refusals:
+                record["refusal"] = refusals[0]
+        return text, record
+    # 全部模型都無法完成：只要有一個是額度用完，就當作額度問題（下次排程再試）
+    if quota is not None and last is not quota:
+        raise QuotaExhausted("；".join(skipped)[:500], explain=quota.explain)
+    raise last

@@ -16,7 +16,7 @@ TZ = ZoneInfo("Asia/Taipei")
 KIND_LABEL = {"院會": "院會", "委員會": "委員會", "黨團協商": "黨團協商", "全院委員會": "全院委員會", "公聽會": "公聽會"}
 
 DISCLAIMER = (
-    "本頁由 AI（Claude）依立法院公開資料自動產生，未經人工審核，可能有錯誤或遺漏。"
+    "本頁由 AI 依立法院公開資料自動產生，未經人工審核，可能有錯誤或遺漏。"
     "內容僅供理解會議脈絡，不代表任何政黨立場，也不構成法律意見。"
     "請以原始影片、立法院公報與全國法規資料庫為準。"
 )
@@ -166,7 +166,9 @@ def build_meeting(meta: dict, cfg: dict) -> str:
     if analysis and analysis_path.exists():
         content = render_markdown(analysis_path.read_text(encoding="utf-8"))
         foot = (f"<p class=\"muted small\">分析產生時間：{esc(analysis.get('generated_at'))}，"
-                f"模型：{esc(analysis.get('model'))}，依據：{esc(analysis.get('source_label') or meta.get('source_label'))}。</p>")
+                f"模型：{esc(analysis.get('model'))}"
+                + (f"（{esc(analysis['provider_label'])}）" if analysis.get("provider_label") else "")
+                + f"，依據：{esc(analysis.get('source_label') or meta.get('source_label'))}。</p>")
         if analysis.get("mode") == "manual":
             foot += ("<p class=\"muted small\">本篇依本站同一套撰寫規則在 Claude 對話中完成後匯入，"
                      "經過相同的程式檢查；逐字稿改版（例如公報刊出）時，自動流程會重新分析。</p>")
@@ -198,6 +200,7 @@ def build_about(cfg: dict) -> str:
 <li><strong>寫作規則</strong>：只能根據提供的資料；不使用帶褒貶的用語（除非是加上引號的發言者原話）；不評價對錯、不預測選舉；事實附時間點，數字註明是誰說的；有爭議的法律問題並列各方見解，不自行裁定。</li>
 <li><strong>固定格式</strong>：每篇依相同段落撰寫；事實查核表的狀態只能是「資料內可確認」「待查證」「發言間互相矛盾」。</li>
 <li><strong>中立性審稿</strong>：初稿完成後，再由 AI 以審稿人身分檢查用語、各方篇幅與依據，直接修訂。</li>
+<li><strong>不綁定單一 AI</strong>：同一套寫作規則可交給 Claude（Anthropic）或 Gemini（Google）執行，每頁底部註明實際使用的模型。不同模型的寫法與品質可能不同。</li>
 <li><strong>程式檢查</strong>：不靠 AI 的機械檢查，掃描引號外的立場用語，以及未標「需查證」的法條引用，結果直接顯示在該頁。</li>
 <li><strong>可對照</strong>：每頁附原始影片、議事網與逐字稿連結。AI 產生的內容一律以純文字顯示。</li>
 </ol>

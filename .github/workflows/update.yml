@@ -44,11 +44,32 @@ jobs:
       - name: 單元測試
         run: python -m unittest discover -s tests -v
 
+      # 只有設定了 Claude 訂閱權杖時才需要安裝 Claude Code（npm 版需 Node.js 22 以上）
+      - name: 檢查 AI 服務設定
+        id: ai
+        env:
+          HAS_CLAUDE_SUBSCRIPTION: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: echo "claude_subscription=$HAS_CLAUDE_SUBSCRIPTION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.ai.outputs.claude_subscription == 'true'
+        with:
+          node-version: "22"
+
+      - name: 安裝 Claude Code
+        if: steps.ai.outputs.claude_subscription == 'true'
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
       - name: 抓資料並分析
         id: run
         continue-on-error: true
         env:
+          # 設定其中一個即可；都設定時依 config.json 的 provider_order 選用
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           INPUT_SINCE: ${{ inputs.since }}
           INPUT_UNTIL: ${{ inputs.until }}
           INPUT_MAX: ${{ inputs.max }}

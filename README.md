@@ -1,6 +1,6 @@
 # 立法院會議客觀分析
 
-每天自動整理立法院院會、全院委員會與黨團協商的內容，用 AI（Claude）寫成客觀摘要：並列各方主張、整理數字查核清單、對照相關法條，發布成靜態網站。
+每天自動整理立法院院會、全院委員會與黨團協商的內容，用 AI（Claude 或 Gemini）寫成客觀摘要：並列各方主張、整理數字查核清單、對照相關法條，發布成靜態網站。
 
 網站：<https://baize404.github.io/ly-analysis/>
 
@@ -11,8 +11,8 @@ LYAPI（立法院 IVOD 影片 AI 逐字稿／公報發言紀錄）
    ↓ lyanalysis/collect.py   依「公報 > 完整會議逐字稿 > 發言片段逐字稿」選最可靠的來源
 全國法規資料庫 OpenAPI（references/laws.json 指定的條文，每週更新）
    ↓ lyanalysis/laws.py
-Claude API（撰寫 → 中立性審稿）
-   ↓ lyanalysis/analyze.py   被安全機制婉拒時自動改用備用模型
+AI 服務（撰寫 → 中立性審稿）：Anthropic API／Claude 訂閱／Gemini 免費額度，依設定的金鑰自動選用
+   ↓ lyanalysis/backends.py、analyze.py   婉拒、模型下架或額度用完時自動改用備用模型
 程式檢查（立場用語、未標需查證的法條）
    ↓ lyanalysis/lint.py
 靜態網站 docs/ → GitHub Pages
@@ -22,9 +22,26 @@ GitHub Actions 每天 11:43 與 21:17（臺北時間）執行（`.github/workflo
 
 ## 第一次設定
 
-1. **加入 API 金鑰**：repo 的 **Settings → Secrets and variables → Actions → New repository secret**，名稱 `ANTHROPIC_API_KEY`，值貼上 Anthropic Console 建立的金鑰。金鑰不要放進程式碼或 commit。
+1. **加入 AI 服務的金鑰**（三選一，見下一節）：repo 的 **Settings → Secrets and variables → Actions → New repository secret**。金鑰只放在這裡，不要放進程式碼、commit 或貼到聊天室。
 2. **開啟網站**：**Settings → Pages → Build and deployment**，Source 選 **Deploy from a branch**，Branch 選 **main**、資料夾 **/docs**（選根目錄也可以，會自動轉到 docs/），按 Save。
 3. **第一次執行**：**Actions → 更新會議分析 → Run workflow**，「起始日期」填 `2026-11-20` 即可補抓那天之後的會議。
+
+## 選擇 AI 服務（免費方案）
+
+設定以下任一個 Secret 即可自動分析。都設定時，依 `config.json` 的 `provider_order` 選第一個（預設：Anthropic API → Claude 訂閱 → Gemini）；額度用完會停在當下，剩下的會議下次排程再分析。
+
+| Secret 名稱 | 服務 | 費用 | 取得方式 |
+|---|---|---|---|
+| `GEMINI_API_KEY` | Google Gemini API 免費額度 | 免費（每日次數有限） | 用 Google 帳號登入 [Google AI Studio](https://aistudio.google.com/apikey) → Create API key，不需信用卡 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Pro／Max 訂閱 | 不另外收費，計入訂閱用量上限 | 在電腦安裝 Claude Code 後執行 `claude setup-token`，複製產生的權杖 |
+| `ANTHROPIC_API_KEY` | Anthropic API | 按用量付費 | [Claude Console](https://platform.claude.com) 建立金鑰並儲值 |
+
+注意事項：
+
+- **Gemini 免費額度**：每天的次數很少（依模型不同，從每天約 20 次到數百次；實際數字在 AI Studio 的 Rate limit 頁查看），每日額度在美國太平洋時間午夜重置。一場會議約需 2～6 次呼叫，所以設定為每次最多分析 4 場，主要模型額度用完會依序改用 `fallback_models` 裡的其他免費模型。Google 會用免費方案的輸入與輸出改進其產品；本站送出的都是公開的立法院資料。
+- **Claude 訂閱**：權杖綁定產生它的人的訂閱，分析會用掉該訂閱的用量上限（與平常使用 Claude 共用）。權杖不要分享給別人。
+- 每頁底部會標示實際使用的服務與模型。不同模型的寫法與品質可能不同，程式檢查（立場用語、法條引用）對所有模型都一樣。
+- Gemini 的模型名稱更新得很快。若執行摘要出現「找不到模型」，到 `config.json` 的 `providers.gemini` 改成 AI Studio 上列出的名稱。
 
 ## 法條資料
 
@@ -34,7 +51,8 @@ GitHub Actions 每天 11:43 與 21:17（臺北時間）執行（`.github/workflo
 
 ## 出錯時
 
-- Actions 執行有錯誤時會標成紅色 ✗，點進該次執行的 **Summary**，有中文的錯誤原因與處理方式（例如金鑰無效、餘額不足、LYAPI 暫時連不上）。
+- Actions 執行有錯誤時會標成紅色 ✗，點進該次執行的 **Summary**，有中文的錯誤原因與處理方式（例如金鑰無效、權杖過期、LYAPI 暫時連不上）。
+- 免費額度或訂閱用量用完不算錯誤：執行仍是綠色 ✓，Summary 的「備註」會寫明還有幾場等待分析。
 - 已完成的部分仍會更新到網站；失敗的會議下次排程自動重試。
 - 最近一次的錯誤紀錄也存在 `data/last_run.json`。
 
@@ -43,19 +61,21 @@ GitHub Actions 每天 11:43 與 21:17（臺北時間）執行（`.github/workflo
 | 欄位 | 說明 |
 |---|---|
 | `meeting_types` | 要分析的會議種類。加入 `"委員會"` 會大幅增加場次與費用 |
-| `model` / `fallback_model` | 主要模型與被婉拒時的備用模型 |
+| `provider_order` | 有多個金鑰時的選用順序 |
+| `providers.<服務>.model` / `fallback_models` | 各服務的主要模型與備用模型清單 |
+| `providers.<服務>.chunk_chars` 等 | 覆寫共用設定，例如 Gemini 每段逐字稿較短、每次分析場數較少 |
 | `review_pass` | 是否做第二輪中立性審稿 |
-| `max_analyses_per_run` | 每次最多分析幾場，用來控制費用 |
+| `max_analyses_per_run` | 每次最多分析幾場，用來控制費用或免費額度 |
 | `lookback_days` | 每次回頭檢查幾天內的會議 |
 | `gazette_recheck_days` | 幾天內的會議要持續檢查公報是否刊出 |
 
-## 費用估算
+## 費用估算（Anthropic API）
 
-以 Claude Sonnet 5.5（輸入每百萬 tokens 2 美元、輸出 10 美元）計，一場約 7 小時的院會逐字稿約十幾萬字，含審稿大約 1 美元上下。實際用量記錄在各場 `data/meetings/*/meta.json` 的 `analysis.usage`。
+使用 Gemini 免費額度或 Claude 訂閱時不另外收費。以 Anthropic API 的 Claude Sonnet 5.5（輸入每百萬 tokens 2 美元、輸出 10 美元）計，一場約 7 小時的院會逐字稿約十幾萬字，含審稿大約 1 美元上下。實際用量記錄在各場 `data/meetings/*/meta.json` 的 `analysis.usage`。
 
-### 不設 API 金鑰時：在對話中撰寫後匯入
+### 不設任何金鑰時：在對話中撰寫後匯入
 
-沒有設定 `ANTHROPIC_API_KEY` 時，排程仍會收集逐字稿並更新網站，只是不產生分析。可以在 Claude 對話中依 `prompts/` 的同一套規則撰寫分析，再匯入：
+沒有設定任何 AI 服務的金鑰時，排程仍會收集逐字稿並更新網站，只是不產生分析。可以在 Claude 對話中依 `prompts/` 的同一套規則撰寫分析，再匯入：
 
 ```bash
 python tools/import_analysis.py <會議資料夾名稱> 分析.md --model "Claude Opus 5.5（對話中撰寫，非 API）"
@@ -69,7 +89,8 @@ python run.py --only-site
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests      # 離線測試
-ANTHROPIC_API_KEY=... python run.py --since 2026-11-20
+GEMINI_API_KEY=... python run.py --since 2026-11-20   # 或 ANTHROPIC_API_KEY／CLAUDE_CODE_OAUTH_TOKEN
+LY_PROVIDER=gemini python run.py                      # 有多個金鑰時強制指定服務
 python run.py --only-site                 # 只重新產生網站
 ```
 

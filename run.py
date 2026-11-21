@@ -22,6 +22,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from lyanalysis import collect, laws, lint, lyapi, site
+from lyanalysis.backends import BackendError, NoBackend, QuotaExhausted, select_backend
 from lyanalysis.transcript import build_roster
 
 ROOT = Path(__file__).resolve().parent
@@ -43,12 +44,16 @@ def explain(exc: BaseException) -> str:
     name = type(exc).__name__
     text = str(exc)
     low = text.lower()
+    if isinstance(exc, BackendError) and exc.explain:
+        return exc.explain
+    if isinstance(exc, BackendError):
+        return f"AI 服務回報錯誤：{text[:300]}"
     if name == "AuthenticationError":
         return "Anthropic API 金鑰無效。請到 repo 的 Settings → Secrets and variables → Actions，確認 ANTHROPIC_API_KEY 是否貼對、是否已被撤銷。"
     if name == "PermissionDeniedError":
         return "API 金鑰沒有使用這個模型的權限。請確認帳戶狀態，或在 config.json 改用其他模型。"
     if name == "NotFoundError":
-        return "找不到指定的模型。請檢查 config.json 的 model／fallback_model 名稱是否正確。"
+        return "找不到指定的模型。請檢查 config.json 中 providers 底下的 model／fallback_models 名稱是否正確。"
     if name == "RateLimitError":
         return "超過 API 速率限制或用量上限。下次排程會自動重試；若持續發生，請到 Anthropic Console 查看用量限制。"
     if name == "BadRequestError" and ("credit" in low or "balance" in low or "billing" in low):
@@ -60,7 +65,7 @@ def explain(exc: BaseException) -> str:
     if name in ("InternalServerError", "OverloadedError") or "overloaded" in low or "529" in low:
         return "Anthropic 伺服器忙碌或暫時故障。下次排程會重試。"
     if name == "Refusal":
-        return f"模型的安全機制婉拒了這次分析（{text}），且備用模型也無法完成。這是平台端的判斷，不是程式錯誤；可在 config.json 換用其他 fallback_model。"
+        return f"模型的安全機制婉拒了這次分析（{text}），且備用模型也無法完成。這是平台端的判斷，不是程式錯誤；可在 config.json 調整備用模型。"
     if name == "LYAPIError":
         return f"LYAPI（立法院資料）連線失敗：{text[:200]}。可能是對方服務暫時中斷，下次排程會重試。"
     if name in ("URLError", "TimeoutError", "ConnectionError"):
@@ -144,25 +149,41 @@ def needs_analysis(meta: dict, cfg: dict) -> bool:
     return meta.get("transcript_sha256") != done.get("transcript_sha256") and grown
 
 
-def analyze_all(cfg: dict, limit: int) -> None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        notes.append("未設定 ANTHROPIC_API_KEY，本次只更新資料與網站，沒有產生分析。請到 repo 的 Settings → Secrets and variables → Actions 新增。")
+NO_BACKEND_NOTE = (
+    "沒有設定 AI 服務的金鑰，本次只更新資料與網站，沒有產生分析。到 repo 的 Settings → Secrets and variables → Actions "
+    "新增以下其中一個即可：GEMINI_API_KEY（Google Gemini 免費額度）、CLAUDE_CODE_OAUTH_TOKEN（Claude Pro／Max 訂閱）、"
+    "ANTHROPIC_API_KEY（Anthropic API，按用量付費）。步驟見 README。")
+
+
+def analyze_all(cfg: dict, limit: int | None = None) -> None:
+    try:
+        backend, pcfg = select_backend(cfg)
+    except NoBackend:
+        notes.append(NO_BACKEND_NOTE)
         log("⚠ " + notes[-1])
         return
-    import anthropic
+    except BackendError as exc:
+        record_error("AI 服務設定", "選擇服務", exc)
+        return
     from lyanalysis.analyze import analyze
 
-    client = anthropic.Anthropic(max_retries=4)
-    metas =[json.loads(p.read_text(encoding="utf-8")) for p in MEETINGS.glob("*/meta.json")]
+    limit = int(pcfg["max_analyses_per_run"]) if limit is None else limit
+    log(f"使用 AI 服務：{backend.label}（模型 {pcfg['model']}）")
+    metas = [json.loads(p.read_text(encoding="utf-8")) for p in MEETINGS.glob("*/meta.json")]
     todo = sorted((m for m in metas if needs_analysis(m, cfg)), key=lambda m: m["date"], reverse=True)
     if len(todo) > limit:
         notes.append(f"待分析 {len(todo)} 場，本次依設定只處理最新的 {limit} 場，其餘留待下次。")
-    for meta in todo[:limit]:
+    for index, meta in enumerate(todo[:limit]):
         folder = MEETINGS / meta["slug"]
         transcript = (folder / "transcript.txt").read_text(encoding="utf-8")
         log(f"分析 {meta['slug']}（{meta['transcript_chars']:,} 字）…")
         try:
-            text, record = analyze(meta, transcript, cfg, client)
+            text, record = analyze(meta, transcript, pcfg, backend)
+        except QuotaExhausted as exc:
+            left = len(todo[:limit]) - index
+            notes.append(f"{exc.explain or '額度已用完。'}（本次尚有 {left} 場未分析，網站會顯示「等待分析」。）")
+            log("⚠ " + notes[-1])
+            break
         except Exception as exc:
             meta["analysis_error"] = record_error("AI 分析", meta["slug"], exc)
             collect.save_meta(folder, meta)
@@ -177,8 +198,10 @@ def analyze_all(cfg: dict, limit: int) -> None:
         meta.pop("analysis_error", None)
         collect.save_meta(folder, meta)
         usage = record.get("usage", {})
-        log(f"  ✓ 完成：{record['model']}，輸入 {usage.get('input_tokens', 0):,}、輸出 {usage.get('output_tokens', 0):,} tokens，"
-            f"程式檢查提示 {len(meta['analysis']['lint'])} 項")
+        if record.get("skipped_models"):
+            notes.append(f"{meta['slug']} 改用備用模型 {record['model']}：" + "；".join(record["skipped_models"])[:300])
+        log(f"  ✓ 完成：{record['model']}（{backend.label}），輸入 {usage.get('input_tokens', 0):,}、"
+            f"輸出 {usage.get('output_tokens', 0):,} tokens，程式檢查提示 {len(meta['analysis']['lint'])} 項")
 
 
 def refresh_laws(cfg: dict, force: bool = False) -> None:
@@ -241,8 +264,7 @@ def main() -> int:
         log(f"範圍：{since} ～ {until}，會議種類：{'、'.join(cfg['meeting_types'])}")
         collect_all(cfg, since, until)
         if not args.no_analyze:
-            limit = int(args.max) if args.max.strip() else int(cfg["max_analyses_per_run"])
-            analyze_all(cfg, limit)
+            analyze_all(cfg, int(args.max) if args.max.strip() else None)
 
     count = site.build(MEETINGS, DOCS, cfg)
     log(f"網站已產生：{count} 場會議 → {DOCS}")
