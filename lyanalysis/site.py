@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -25,9 +26,14 @@ def esc(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+NESTED_ITEM = re.compile(r"^( +)([-*+] |\d+\. )", re.M)
+
+
 def render_markdown(text: str) -> str:
     # AI 產生的內容一律不允許夾帶 HTML：先把 < 轉成實體，再轉 Markdown。
     safe = text.replace("&", "&amp;").replace("<", "&lt;")
+    # Python-Markdown 的巢狀清單需縮排 4 格；AI 常用 2 格，先統一調整。
+    safe = NESTED_ITEM.sub(lambda m: (m.group(1) * 2 if len(m.group(1)) % 4 == 2 else m.group(1)) + m.group(2), safe)
     out = md.markdown(safe, extensions=["tables", "sane_lists", "fenced_code"], output_format="html")
     return out.replace("<table>", '<div class="table-wrap"><table>').replace("</table>", "</table></div>")
 

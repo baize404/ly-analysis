@@ -283,5 +283,13 @@ class ImportToolTest(unittest.TestCase):
                 import_analysis(folder, "# 標題\n內容", "測試")
 
 
+
+class NestedListTest(unittest.TestCase):
+    def test_two_space_nested_list_renders_nested(self):
+        out = site.render_markdown("- a\n  1. x\n  2. y\n- b\n    - c\n")
+        self.assertEqual(out.count("<ol>"), 1)
+        self.assertEqual(out.count("<ul>"), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
