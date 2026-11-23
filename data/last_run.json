@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-23T04:24:27+08:00",
+  "at": "2026-11-23T21:37:42+08:00",
   "errors": [],
   "notes": [
     "沒有設定 AI 服務的金鑰，本次只更新資料與網站，沒有產生分析。到 repo 的 Settings → Secrets and variables → Actions 新增以下其中一個即可：GEMINI_API_KEY（Google Gemini 免費額度）、CLAUDE_CODE_OAUTH_TOKEN（Claude Pro／Max 訂閱）、ANTHROPIC_API_KEY（Anthropic API，按用量付費）。步驟見 README。"
