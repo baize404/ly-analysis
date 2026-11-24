@@ -1,6 +1,39 @@
 {
-  "at": "2026-11-24T08:59:57+08:00",
-  "errors": [],
+  "at": "2026-11-24T22:15:55+08:00",
+  "errors": [
+    {
+      "stage": "抓會議清單",
+      "target": "2026-11-21",
+      "type": "LYAPIError",
+      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-21&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
+      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-21&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
+      "at": "2026-11-24T22:14:57+08:00"
+    },
+    {
+      "stage": "抓會議清單",
+      "target": "2026-11-22",
+      "type": "LYAPIError",
+      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-22&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
+      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-22&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
+      "at": "2026-11-24T22:15:16+08:00"
+    },
+    {
+      "stage": "抓會議清單",
+      "target": "2026-11-23",
+      "type": "LYAPIError",
+      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-23&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
+      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-23&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
+      "at": "2026-11-24T22:15:35+08:00"
+    },
+    {
+      "stage": "抓會議清單",
+      "target": "2026-11-24",
+      "type": "LYAPIError",
+      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-24&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
+      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-24&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
+      "at": "2026-11-24T22:15:54+08:00"
+    }
+  ],
   "notes": [
     "沒有設定 AI 服務的金鑰，本次只更新資料與網站，沒有產生分析。到 repo 的 Settings → Secrets and variables → Actions 新增以下其中一個即可：GEMINI_API_KEY（Google Gemini 免費額度）、CLAUDE_CODE_OAUTH_TOKEN（Claude Pro／Max 訂閱）、ANTHROPIC_API_KEY（Anthropic API，按用量付費）。步驟見 README。"
   ]
