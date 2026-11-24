@@ -1,21 +1,13 @@
 {
-  "at": "2026-11-24T22:15:55+08:00",
+  "at": "2026-11-25T07:06:46+08:00",
   "errors": [
-    {
-      "stage": "抓會議清單",
-      "target": "2026-11-21",
-      "type": "LYAPIError",
-      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-21&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
-      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-21&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
-      "at": "2026-11-24T22:14:57+08:00"
-    },
     {
       "stage": "抓會議清單",
       "target": "2026-11-22",
       "type": "LYAPIError",
       "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-22&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
       "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-22&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
-      "at": "2026-11-24T22:15:16+08:00"
+      "at": "2026-11-25T07:05:48+08:00"
     },
     {
       "stage": "抓會議清單",
@@ -23,7 +15,7 @@
       "type": "LYAPIError",
       "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-23&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
       "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-23&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
-      "at": "2026-11-24T22:15:35+08:00"
+      "at": "2026-11-25T07:06:07+08:00"
     },
     {
       "stage": "抓會議清單",
@@ -31,7 +23,15 @@
       "type": "LYAPIError",
       "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-24&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
       "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-24&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
-      "at": "2026-11-24T22:15:54+08:00"
+      "at": "2026-11-25T07:06:26+08:00"
+    },
+    {
+      "stage": "抓會議清單",
+      "target": "2026-11-25",
+      "type": "LYAPIError",
+      "message": "GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-25&limit=100&page=1 失敗：HTTP Error 400: Bad Request",
+      "explain": "LYAPI（立法院資料）連線失敗：GET https://v2.ly.govapi.tw/ivods?%E6%97%A5%E6%9C%9F=2026-11-25&limit=100&page=1 失敗：HTTP Error 400: Bad Request。可能是對方服務暫時中斷，下次排程會重試。",
+      "at": "2026-11-25T07:06:46+08:00"
     }
   ],
   "notes": [
